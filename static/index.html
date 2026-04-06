@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HH Job Ranker</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #22263a;
+    --border: #2e3250;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #64748b;
+    --accent: #6366f1;
+    --accent-hover: #4f52d0;
+    --green: #22c55e;
+    --blue: #3b82f6;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --gray: #475569;
+    --grade-a: #16a34a;
+    --grade-a-bg: #14532d22;
+    --grade-b: #2563eb;
+    --grade-b-bg: #1e3a5f22;
+    --grade-c: #d97706;
+    --grade-c-bg: #451a0322;
+    --grade-d: #475569;
+    --grade-d-bg: #1e293b22;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .header-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.3px;
+  }
+  .header-title span { color: var(--accent); }
+  .header-status {
+    font-size: 12px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+  }
+  .status-dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.idle { background: var(--text3); }
+  .status-dot.running { background: var(--orange); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .header-counters {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+  .counter-val { color: var(--text); font-weight: 600; }
+
+  /* Run button */
+  .btn-run {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+    white-space: nowrap;
+  }
+  .btn-run:hover { background: var(--accent-hover); }
+  .btn-run:disabled { background: var(--gray); cursor: not-allowed; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 12px 20px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .tab {
+    padding: 8px 16px;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text2);
+    border: 1px solid transparent;
+    border-bottom: none;
+    transition: color .15s, background .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    background: var(--bg);
+    color: var(--text);
+    border-color: var(--border);
+    border-bottom-color: var(--bg);
+    margin-bottom: -1px;
+  }
+
+  /* Main content */
+  .content { max-width: 960px; margin: 0 auto; padding: 20px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Filters */
+  .filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .filter-group {
+    display: flex;
+    gap: 2px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .filter-btn {
+    padding: 5px 11px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text2);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .filter-btn:hover { color: var(--text); background: var(--bg3); }
+  .filter-btn.active { background: var(--accent); color: #fff; }
+  .search-box {
+    flex: 1;
+    min-width: 180px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .search-box:focus { border-color: var(--accent); }
+  .search-box::placeholder { color: var(--text3); }
+  .sort-select {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* Vacancy cards */
+  .vacancies-list { display: flex; flex-direction: column; gap: 12px; }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--accent); }
+
+  .card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .grade-badge {
+    flex-shrink: 0;
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+  }
+  .grade-A { background: var(--grade-a-bg); color: var(--grade-a); border: 1.5px solid var(--grade-a); }
+  .grade-B { background: var(--grade-b-bg); color: var(--grade-b); border: 1.5px solid var(--grade-b); }
+  .grade-C { background: var(--grade-c-bg); color: var(--grade-c); border: 1.5px solid var(--grade-c); }
+  .grade-D { background: var(--grade-d-bg); color: var(--grade-d); border: 1.5px solid var(--grade-d); }
+
+  .card-title-block { flex: 1; min-width: 0; }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-company { font-size: 13px; color: var(--text2); margin-top: 1px; }
+
+  .card-salary {
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--green);
+    white-space: nowrap;
+  }
+
+  .card-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text3);
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .card-meta span { display: flex; align-items: center; gap: 3px; }
+
+  .card-reasons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .reason-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .reason-match { background: #14532d33; color: #4ade80; border: 1px solid #16a34a44; }
+  .reason-risk  { background: #45130333; color: #fbbf24; border: 1px solid #d9770644; }
+
+  .card-summary {
+    font-size: 13px;
+    color: var(--text2);
+    font-style: italic;
+    margin-bottom: 12px;
+    border-left: 2px solid var(--border);
+    padding-left: 10px;
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--text);
+    transition: all .15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); color: #fff; }
+
+  .status-select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: var(--text2);
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color .15s;
+    margin-left: auto;
+  }
+  .status-select:focus { border-color: var(--accent); }
+  .status-applied { color: var(--green); border-color: var(--green); }
+  .status-rejected { color: var(--red); border-color: var(--red); }
+  .status-viewed { color: var(--text2); }
+
+  .score-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+  .score-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width .3s;
+  }
+  .score-fill.grade-A { background: var(--grade-a); }
+  .score-fill.grade-B { background: var(--grade-b); }
+  .score-fill.grade-C { background: var(--grade-c); }
+  .score-fill.grade-D { background: var(--grade-d); }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text3);
+  }
+  .empty-state h3 { font-size: 18px; margin-bottom: 8px; color: var(--text2); }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: #00000088;
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 580px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    transform: translateY(16px);
+    transition: transform .2s;
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .modal-header h3 { font-size: 15px; font-weight: 600; }
+  .modal-header p { font-size: 12px; color: var(--text2); }
+  .modal-body { flex: 1; padding: 16px 20px; overflow-y: auto; }
+  .modal-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    gap: 10px;
+    color: var(--text2);
+    font-size: 13px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .modal-textarea {
+    width: 100%;
+    min-height: 200px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    font-family: inherit;
+    transition: border-color .15s;
+  }
+  .modal-textarea:focus { border-color: var(--accent); }
+  .modal-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .copy-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--green);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all .2s;
+    z-index: 2000;
+    pointer-events: none;
+  }
+  .copy-toast.show { opacity: 1; transform: translateY(0); }
+
+  /* Agent tab */
+  .agent-section { margin-bottom: 28px; }
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text2);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .agent-status-banner {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--text3);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border)55;
+    color: var(--text);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg3)55; }
+  .table-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-done { background: #14532d33; color: #4ade80; }
+  .badge-running { background: #45130333; color: #fbbf24; }
+  .badge-error { background: #4c0519; color: #fca5a5; }
+  .effectiveness {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .eff-bar {
+    width: 60px;
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .eff-fill { height: 100%; background: var(--accent); border-radius: 99px; }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .header-top { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .card-header { flex-wrap: wrap; }
+    .card-salary { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-top">
+    <div class="header-title">HH Job <span>Ranker</span></div>
+    <button class="btn-run" id="btnRun" onclick="triggerRun()">▶ Запустить сейчас</button>
+  </div>
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+    <div class="header-status" id="agentStatus">
+      <span><span class="status-dot idle" id="statusDot"></span><span id="statusText">Загрузка...</span></span>
+      <span id="lastRunText"></span>
+      <span id="nextRunText"></span>
+    </div>
+    <div class="header-counters">
+      <span>Найдено: <span class="counter-val" id="cntTotal">—</span></span>
+      <span>Показано: <span class="counter-val" id="cntShown">—</span></span>
+      <span>Сегодня: <span class="counter-val" id="cntToday">—</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('vacancies', this)">📋 Вакансии</div>
+  <div class="tab" onclick="switchTab('agent', this)">🤖 Агент</div>
+</div>
+
+<!-- Vacancies Tab -->
+<div class="content">
+  <div class="tab-panel active" id="tab-vacancies">
+    <div class="filters">
+      <div class="filter-group" id="gradeFilter">
+        <button class="filter-btn active" data-val="all" onclick="setFilter('grade', 'all', this)">Все</button>
+        <button class="filter-btn" data-val="A" onclick="setFilter('grade', 'A', this)">A</button>
+        <button class="filter-btn" data-val="B" onclick="setFilter('grade', 'B', this)">B</button>
+        <button class="filter-btn" data-val="C" onclick="setFilter('grade', 'C', this)">C</button>
+        <button class="filter-btn" data-val="D" onclick="setFilter('grade', 'D', this)">D</button>
+      </div>
+      <div class="filter-group" id="scheduleFilter">
+        <button class="filter-btn active" data-val="all" onclick="setFilter('schedule', 'all', this)">Все форматы</button>
+        <button class="filter-btn" data-val="remote" onclick="setFilter('schedule', 'remote', this)">Удалёнка</button>
+        <button class="filter-btn" data-val="hybrid" onclick="setFilter('schedule', 'hybrid', this)">Гибрид</button>
+        <button class="filter-btn" data-val="office" onclick="setFilter('schedule', 'office', this)">Офис</button>
+      </div>
+      <div class="filter-group" id="statusFilter">
+        <button class="filter-btn active" data-val="active" onclick="setFilter('status', 'active', this)">Активные</button>
+        <button class="filter-btn" data-val="applied" onclick="setFilter('status', 'applied', this)">Откликнулся</button>
+        <button class="filter-btn" data-val="all" onclick="setFilter('status', 'all', this)">Все</button>
+      </div>
+      <select class="sort-select" onchange="setSort(this.value)">
+        <option value="score">По оценке</option>
+        <option value="date">По дате</option>
+        <option value="salary">По зарплате</option>
+      </select>
+      <input class="search-box" type="search" placeholder="🔍 Поиск..." id="searchBox" oninput="applySearch(this.value)">
+    </div>
+    <div class="vacancies-list" id="vacanciesList">
+      <div class="empty-state"><h3>Загрузка...</h3></div>
+    </div>
+  </div>
+
+  <!-- Agent Tab -->
+  <div class="tab-panel" id="tab-agent">
+    <div class="agent-section">
+      <div class="section-title">Статус агента</div>
+      <div class="agent-status-banner" id="agentBanner">
+        <span class="status-dot idle" id="bannerDot"></span>
+        <span id="bannerText">Загрузка...</span>
+      </div>
+    </div>
+
+    <div class="agent-section">
+      <div class="section-title">История запусков</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Начало</th>
+              <th>Запросов</th>
+              <th>Найдено</th>
+              <th>Новых</th>
+              <th>Оценено</th>
+              <th>Статус</th>
+            </tr>
+          </thead>
+          <tbody id="runsTableBody">
+            <tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="agent-section">
+      <div class="section-title">Поисковые запросы</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Запрос</th>
+              <th>Использований</th>
+              <th>A+B найдено</th>
+              <th>Последний раз</th>
+            </tr>
+          </thead>
+          <tbody id="queriesTableBody">
+            <tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cover Letter Modal -->
+<div class="modal-overlay" id="coverModal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✉️ Сопроводительное письмо</h3>
+      <p id="modalSubtitle">...</p>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="modal-spinner"><div class="spinner"></div> Генерирую...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="copyLetter()" id="btnCopy">📋 Скопировать</button>
+      <button class="btn" onclick="regenerateLetter()" id="btnRegen">🔄 Перегенерировать</button>
+      <button class="btn btn-primary" onclick="closeModal()">✕ Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- Copy Toast -->
+<div class="copy-toast" id="copyToast">✓ Скопировано!</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────
+let vacancies = [];
+let filters = { grade: 'all', schedule: 'all', status: 'active', sort: 'score', q: '' };
+let currentModalVacancyId = null;
+let statsInterval = null;
+let vacanciesInterval = null;
+
+// ─── Init ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadVacancies();
+  loadStats();
+  statsInterval = setInterval(loadStats, 30000);
+  vacanciesInterval = setInterval(loadVacancies, 300000);
+});
+
+// ─── Tab switching ────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'agent') {
+    loadAgentData();
+  }
+}
+
+// ─── API ──────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ─── Stats ────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const s = await api('/api/stats');
+    document.getElementById('cntTotal').textContent = s.total;
+    document.getElementById('cntShown').textContent = s.shown;
+    document.getElementById('cntToday').textContent = s.today_new;
+
+    const dot = document.getElementById('statusDot');
+    const bannerDot = document.getElementById('bannerDot');
+    const text = document.getElementById('statusText');
+    const bannerText = document.getElementById('bannerText');
+    const btnRun = document.getElementById('btnRun');
+
+    if (s.agent_running) {
+      dot.className = 'status-dot running';
+      bannerDot.className = 'status-dot running';
+      text.textContent = 'Агент работает...';
+      bannerText.textContent = 'Агент выполняет поиск и оценку вакансий...';
+      btnRun.disabled = true;
+      btnRun.textContent = '⏳ Работает...';
+    } else {
+      dot.className = 'status-dot active';
+      bannerDot.className = 'status-dot active';
+      text.textContent = 'Агент активен';
+      btnRun.disabled = false;
+      btnRun.textContent = '▶ Запустить сейчас';
+      bannerText.textContent = 'Агент ожидает следующего запуска.';
+    }
+
+    const lastEl = document.getElementById('lastRunText');
+    if (s.last_run_at) {
+      lastEl.textContent = '· последний запуск: ' + formatTime(s.last_run_at);
+    }
+
+    const nextEl = document.getElementById('nextRunText');
+    if (s.next_run_at) {
+      const diff = timeUntil(s.next_run_at);
+      nextEl.textContent = '· следующий: через ' + diff;
+    }
+  } catch(e) {
+    console.error('Stats error:', e);
+  }
+}
+
+// ─── Vacancies ────────────────────────────────────────────────
+async function loadVacancies() {
+  try {
+    const params = new URLSearchParams();
+    if (filters.grade !== 'all') params.set('grade', filters.grade);
+    if (filters.schedule !== 'all') params.set('schedule', filters.schedule);
+    if (filters.status !== 'all') params.set('status', filters.status);
+    params.set('sort', filters.sort);
+    vacancies = await api('/api/vacancies?' + params.toString());
+    renderVacancies();
+  } catch(e) {
+    console.error('Vacancies error:', e);
+  }
+}
+
+function renderVacancies() {
+  const list = document.getElementById('vacanciesList');
+  let items = vacancies;
+
+  const q = filters.q.toLowerCase().trim();
+  if (q) {
+    items = items.filter(v =>
+      (v.title||'').toLowerCase().includes(q) ||
+      (v.company||'').toLowerCase().includes(q) ||
+      (v.summary||'').toLowerCase().includes(q) ||
+      (v.area||'').toLowerCase().includes(q)
+    );
+  }
+
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state">
+      <h3>Вакансий не найдено</h3>
+      <p>Попробуйте изменить фильтры или запустите агент</p>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(v => cardHTML(v)).join('');
+}
+
+function cardHTML(v) {
+  const salStr = formatSalary(v);
+  const scheduleStr = formatSchedule(v.schedule);
+  const timeStr = formatTimeAgo(v.created_at);
+  const matchChips = (v.match_reasons || []).slice(0, 3).map(r =>
+    `<span class="reason-chip reason-match">✅ ${esc(r)}</span>`
+  ).join('');
+  const riskChips = (v.risk_reasons || []).slice(0, 2).map(r =>
+    `<span class="reason-chip reason-risk">⚠️ ${esc(r)}</span>`
+  ).join('');
+
+  const statusClass = v.status === 'applied' ? 'status-applied'
+    : v.status === 'rejected' ? 'status-rejected'
+    : v.status === 'viewed' ? 'status-viewed' : '';
+
+  return `
+  <div class="card" id="card-${esc(v.id)}">
+    <div class="card-header">
+      <div class="grade-badge grade-${v.grade}">${v.grade}</div>
+      <div class="card-title-block">
+        <div class="card-title" title="${esc(v.title)}">${esc(v.title)}</div>
+        <div class="card-company">${esc(v.company || '—')}</div>
+        <div class="score-bar"><div class="score-fill grade-${v.grade}" style="width:${v.score}%"></div></div>
+      </div>
+      <div class="card-salary">${salStr}</div>
+    </div>
+    <div class="card-meta">
+      <span>📍 ${esc(scheduleStr)}</span>
+      <span>📌 ${esc(v.area || '—')}</span>
+      <span>🕐 ${timeStr}</span>
+      <span style="color:var(--accent)">★ ${v.score}%</span>
+    </div>
+    ${matchChips || riskChips ? `<div class="card-reasons">${matchChips}${riskChips}</div>` : ''}
+    ${v.summary ? `<div class="card-summary">"${esc(v.summary)}"</div>` : ''}
+    <div class="card-actions">
+      <a href="${esc(v.url)}" target="_blank" class="btn">🔗 HH</a>
+      <button class="btn btn-primary" onclick="openCoverLetter('${esc(v.id)}', '${esc(v.title)}', '${esc(v.company)}')">✉️ Сопроводительное</button>
+      <select class="status-select ${statusClass}" onchange="updateStatus('${esc(v.id)}', this)">
+        <option value="new" ${v.status==='new'?'selected':''}>Новая</option>
+        <option value="viewed" ${v.status==='viewed'?'selected':''}>Просмотрено</option>
+        <option value="applied" ${v.status==='applied'?'selected':''}>Откликнулся</option>
+        <option value="rejected" ${v.status==='rejected'?'selected':''}>Не подходит</option>
+      </select>
+    </div>
+  </div>`;
+}
+
+// ─── Filters ──────────────────────────────────────────────────
+function setFilter(type, val, btn) {
+  filters[type] = val;
+  const group = btn.closest('.filter-group');
+  group.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadVacancies();
+}
+
+function setSort(val) {
+  filters.sort = val;
+  loadVacancies();
+}
+
+function applySearch(val) {
+  filters.q = val;
+  renderVacancies();
+}
+
+// ─── Status update ────────────────────────────────────────────
+async function updateStatus(vacancyId, selectEl) {
+  const status = selectEl.value;
+  try {
+    await api(`/api/vacancies/${vacancyId}/status`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ status }),
+    });
+    selectEl.className = 'status-select '
+      + (status === 'applied' ? 'status-applied'
+       : status === 'rejected' ? 'status-rejected'
+       : status === 'viewed' ? 'status-viewed' : '');
+    if (status === 'rejected' && filters.status !== 'all') {
+      const card = document.getElementById('card-' + vacancyId);
+      if (card) card.style.opacity = '0.3';
+    }
+  } catch(e) {
+    console.error('Status update error:', e);
+  }
+}
+
+// ─── Run agent ────────────────────────────────────────────────
+async function triggerRun() {
+  try {
+    const res = await api('/api/agent/run', { method: 'POST' });
+    if (res.status === 'started') {
+      document.getElementById('btnRun').disabled = true;
+      document.getElementById('btnRun').textContent = '⏳ Работает...';
+      loadStats();
+    }
+  } catch(e) {
+    console.error('Run error:', e);
+  }
+}
+
+// ─── Cover letter modal ───────────────────────────────────────
+function openCoverLetter(id, title, company) {
+  currentModalVacancyId = id;
+  document.getElementById('modalSubtitle').textContent = title + ' · ' + company;
+  document.getElementById('modalBody').innerHTML =
+    '<div class="modal-spinner"><div class="spinner"></div> Генерирую...</div>';
+  document.getElementById('coverModal').classList.add('open');
+  generateLetter(id);
+}
+
+async function generateLetter(id) {
+  try {
+    const res = await api(`/api/cover-letter/${id}`, { method: 'POST' });
+    document.getElementById('modalBody').innerHTML =
+      `<textarea class="modal-textarea" id="letterText">${esc(res.text)}</textarea>`;
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML =
+      `<div style="color:var(--red);padding:20px">Ошибка генерации: ${e.message}</div>`;
+  }
+}
+
+function regenerateLetter() {
+  if (!currentModalVacancyId) return;
+  document.getElementById('modalBody').innerHTML =
+    '<div class="modal-spinner"><div class="spinner"></div> Генерирую...</div>';
+  generateLetter(currentModalVacancyId);
+}
+
+async function copyLetter() {
+  const ta = document.getElementById('letterText');
+  if (!ta) return;
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    showToast();
+  } catch(e) {
+    ta.select();
+    document.execCommand('copy');
+    showToast();
+  }
+}
+
+function showToast() {
+  const t = document.getElementById('copyToast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function closeModal() {
+  document.getElementById('coverModal').classList.remove('open');
+  currentModalVacancyId = null;
+}
+
+function closeModalOnOverlay(e) {
+  if (e.target === document.getElementById('coverModal')) closeModal();
+}
+
+// ─── Agent tab data ───────────────────────────────────────────
+async function loadAgentData() {
+  await Promise.all([loadRuns(), loadQueries()]);
+}
+
+async function loadRuns() {
+  try {
+    const runs = await api('/api/agent/runs');
+    const tbody = document.getElementById('runsTableBody');
+    if (!runs.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">Запусков пока нет</td></tr>';
+      return;
+    }
+    tbody.innerHTML = runs.map(r => `
+      <tr>
+        <td style="color:var(--text3)">#${r.id}</td>
+        <td>${formatTime(r.started_at)}</td>
+        <td>${r.queries_used}</td>
+        <td>${r.vacancies_found}</td>
+        <td>${r.vacancies_new}</td>
+        <td>${r.vacancies_scored}</td>
+        <td><span class="badge badge-${r.status}">${r.status}</span></td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    console.error('Runs error:', e);
+  }
+}
+
+async function loadQueries() {
+  try {
+    const queries = await api('/api/agent/queries');
+    const tbody = document.getElementById('queriesTableBody');
+    if (!queries.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">Запросов пока нет</td></tr>';
+      return;
+    }
+    const maxGood = Math.max(...queries.map(q => q.good_results || 0), 1);
+    tbody.innerHTML = queries.map(q => {
+      const pct = Math.round(((q.good_results || 0) / maxGood) * 100);
+      return `
+        <tr>
+          <td>${esc(q.query)}</td>
+          <td style="color:var(--text2)">${q.used_count || 0}</td>
+          <td>
+            <div class="effectiveness">
+              <span style="min-width:20px">${q.good_results || 0}</span>
+              <div class="eff-bar"><div class="eff-fill" style="width:${pct}%"></div></div>
+            </div>
+          </td>
+          <td style="color:var(--text3)">${q.last_used_at ? formatTime(q.last_used_at) : '—'}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch(e) {
+    console.error('Queries error:', e);
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+function formatSalary(v) {
+  const from = v.salary_from;
+  const to = v.salary_to;
+  const cur = v.currency === 'RUR' ? '₽' : (v.currency || '');
+  if (!from && !to) return '<span style="color:var(--text3)">з/п не указана</span>';
+  const fmt = n => n >= 1000 ? Math.round(n/1000) + 'k' : n;
+  if (from && to) return `${fmt(from)}–${fmt(to)} ${cur}`;
+  if (from) return `от ${fmt(from)} ${cur}`;
+  return `до ${fmt(to)} ${cur}`;
+}
+
+function formatSchedule(s) {
+  const map = {
+    remote: 'Удалёнка',
+    fullDay: 'Офис',
+    flyInFlyOut: 'Гибрид',
+    flexible: 'Гибкий',
+    shift: 'Сменный',
+  };
+  return map[s] || s || '—';
+}
+
+function formatTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    return d.toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    }).replace(',', '');
+  } catch { return iso; }
+}
+
+function formatTimeAgo(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
+    const diff = Date.now() - d.getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 2) return 'только что';
+    if (mins < 60) return `${mins} мин назад`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} ч назад`;
+    const days = Math.floor(hrs / 24);
+    return `${days} дн назад`;
+  } catch { return '—'; }
+}
+
+function timeUntil(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    const diff = d.getTime() - Date.now();
+    if (diff <= 0) return 'скоро';
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins} мин`;
+    const hrs = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    return `${hrs}ч ${remMins}м`;
+  } catch { return '—'; }
+}
+</script>
+</body>
+</html>
