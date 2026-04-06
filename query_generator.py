@@ -3,7 +3,14 @@ from typing import List
 
 import ai_client
 import database
-from config.profile import SEED_QUERIES
+from config.defaults import DEFAULT_SEED_QUERIES
+
+
+async def _get_seed_queries() -> List[str]:
+    seed_val = await database.get_setting("seed_queries")
+    if seed_val:
+        return [q.strip() for q in seed_val.splitlines() if q.strip()]
+    return list(DEFAULT_SEED_QUERIES)
 
 
 async def generate() -> List[str]:
@@ -11,10 +18,11 @@ async def generate() -> List[str]:
 
     if not used_queries:
         # Первый запуск — использовать seed-запросы
-        print("[QueryGen] Первый запуск, используем SEED_QUERIES")
-        for q in SEED_QUERIES:
+        print("[QueryGen] Первый запуск, используем seed-запросы из настроек")
+        seed_list = await _get_seed_queries()
+        for q in seed_list:
             await database.save_query(q)
-        return list(SEED_QUERIES)
+        return seed_list
 
     top_titles = await database.get_top_vacancies_titles(limit=10)
 
@@ -25,7 +33,7 @@ async def generate() -> List[str]:
         # Fallback: повторно использовать топ запросы
         top = await database.get_top_queries(limit=6)
         print("[QueryGen] Fallback — используем топ запросы из БД")
-        return [q["query"] for q in top] if top else list(SEED_QUERIES)
+        return [q["query"] for q in top] if top else await _get_seed_queries()
 
     # Сохранить новые запросы в БД
     for q in new_queries:
