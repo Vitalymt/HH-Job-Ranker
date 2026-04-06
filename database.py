@@ -67,13 +67,25 @@ async def init_db():
             )
         """)
 
-        # Seed defaults from env vars (only if not already set)
+        # Seed defaults from env vars and built-in defaults (only if not already set)
+        from config.defaults import (
+            DEFAULT_CANDIDATE_PROFILE,
+            DEFAULT_SEED_QUERIES,
+            DEFAULT_SCORE_PROMPT,
+            DEFAULT_COVER_LETTER_PROMPT,
+            DEFAULT_QUERY_PROMPT,
+        )
         defaults = {
             "ai_provider": os.getenv("AI_PROVIDER", "openrouter"),
             "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
             "openrouter_model": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat"),
             "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
             "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            "candidate_profile": DEFAULT_CANDIDATE_PROFILE,
+            "seed_queries": "\n".join(DEFAULT_SEED_QUERIES),
+            "prompt_score": DEFAULT_SCORE_PROMPT,
+            "prompt_cover_letter": DEFAULT_COVER_LETTER_PROMPT,
+            "prompt_queries": DEFAULT_QUERY_PROMPT,
         }
         now = datetime.utcnow().isoformat()
         for key, value in defaults.items():

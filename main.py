@@ -106,6 +106,11 @@ async def update_settings(body: dict):
         "openrouter_model",
         "deepseek_api_key",
         "deepseek_model",
+        "candidate_profile",
+        "seed_queries",
+        "prompt_score",
+        "prompt_cover_letter",
+        "prompt_queries",
     }
     for key, value in body.items():
         if key in allowed and value is not None:

@@ -4,89 +4,15 @@ from typing import List
 import httpx
 
 import database
-from config.profile import CANDIDATE_PROFILE
+from config.defaults import (
+    DEFAULT_CANDIDATE_PROFILE,
+    DEFAULT_SCORE_PROMPT,
+    DEFAULT_COVER_LETTER_PROMPT,
+    DEFAULT_QUERY_PROMPT,
+)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
-
-SCORE_PROMPT = """
-Ты — AI-рекрутер. Оцени вакансию для кандидата.
-
-ПРОФИЛЬ КАНДИДАТА:
-{profile}
-
-ВАКАНСИЯ:
-Название: {title}
-Компания: {company}
-Локация: {area}
-Формат: {schedule}
-Зарплата: {salary}
-Описание:
-{description}
-
-Верни ТОЛЬКО JSON, без markdown, без пояснений:
-{{
-  "score": 85,
-  "grade": "A",
-  "match_reasons": ["причина 1", "причина 2", "причина 3"],
-  "risk_reasons": ["риск 1", "риск 2"],
-  "summary": "Краткий вывод 1-2 предложения"
-}}
-
-Шкала оценки:
-A (80-100) — отличное совпадение, рекомендую
-B (60-79)  — хорошее, стоит рассмотреть
-C (40-59)  — частичное совпадение
-D (0-39)   — плохое совпадение, не подходит
-"""
-
-COVER_LETTER_PROMPT = """
-Напиши уникальное сопроводительное письмо для отклика на вакансию.
-
-ПРОФИЛЬ КАНДИДАТА:
-{profile}
-
-ВАКАНСИЯ:
-Компания: {company}
-Роль: {title}
-Описание: {description}
-
-ТРЕБОВАНИЯ К ПИСЬМУ:
-- Длина: 150-200 слов
-- Тон: живой, профессиональный, без клише и шаблонов
-- Структура: зацепка (почему эта компания/роль) → что конкретно принесу →
-  пример из опыта с цифрой → призыв к действию
-- НЕ начинать с "Я хочу", "Меня заинтересовала", "Добрый день"
-- НЕ перечислять резюме по пунктам
-- Обязательно упомянуть: название роли и название компании
-- Обращение нейтральное (без имени HR)
-- Язык: русский
-
-Верни только текст письма, без заголовков и пояснений.
-"""
-
-QUERY_PROMPT = """
-Ты ищешь вакансии на HH.ru для конкретного кандидата.
-
-ПРОФИЛЬ КАНДИДАТА:
-{profile}
-
-УЖЕ ИСПОЛЬЗОВАННЫЕ ЗАПРОСЫ (не повторять):
-{used_queries}
-
-ЛУЧШИЕ НАЙДЕННЫЕ ВАКАНСИИ (grade A/B — для понимания что работает):
-{top_titles}
-
-Сгенерируй 6 новых поисковых запросов для HH.ru.
-Правила:
-- Короткие (2-4 слова), как реальный человек ищет работу на HH
-- Разнообразные: часть на русском, часть на английском
-- Учитывай что уже искали — ищи с других углов и синонимов
-- Фокус на целевых ролях кандидата
-
-Верни ТОЛЬКО JSON, без markdown:
-{{"queries": ["запрос 1", "запрос 2", "запрос 3", "запрос 4", "запрос 5", "запрос 6"]}}
-"""
 
 
 def _salary_str(vacancy: dict) -> str:
@@ -160,10 +86,12 @@ def _extract_json(text: str) -> dict:
 
 
 async def score_vacancy(vacancy: dict) -> dict:
+    profile = (await database.get_setting("candidate_profile")) or DEFAULT_CANDIDATE_PROFILE
+    prompt_tpl = (await database.get_setting("prompt_score")) or DEFAULT_SCORE_PROMPT
     salary = _salary_str(vacancy)
     schedule = _schedule_str(vacancy.get("schedule", ""))
-    prompt = SCORE_PROMPT.format(
-        profile=CANDIDATE_PROFILE,
+    prompt = prompt_tpl.format(
+        profile=profile,
         title=vacancy.get("title", ""),
         company=vacancy.get("company", ""),
         area=vacancy.get("area", ""),
@@ -210,8 +138,10 @@ async def score_vacancy(vacancy: dict) -> dict:
 
 
 async def generate_cover_letter(vacancy: dict) -> str:
-    prompt = COVER_LETTER_PROMPT.format(
-        profile=CANDIDATE_PROFILE,
+    profile = (await database.get_setting("candidate_profile")) or DEFAULT_CANDIDATE_PROFILE
+    prompt_tpl = (await database.get_setting("prompt_cover_letter")) or DEFAULT_COVER_LETTER_PROMPT
+    prompt = prompt_tpl.format(
+        profile=profile,
         company=vacancy.get("company", ""),
         title=vacancy.get("title", ""),
         description=vacancy.get("description", "")[:2000],
@@ -224,10 +154,12 @@ async def generate_cover_letter(vacancy: dict) -> str:
 
 
 async def generate_queries(used_queries: List[str], top_titles: List[str]) -> List[str]:
+    profile = (await database.get_setting("candidate_profile")) or DEFAULT_CANDIDATE_PROFILE
+    prompt_tpl = (await database.get_setting("prompt_queries")) or DEFAULT_QUERY_PROMPT
     used_str = "\n".join(f"- {q}" for q in used_queries) if used_queries else "— (нет)"
     titles_str = "\n".join(f"- {t}" for t in top_titles) if top_titles else "— (нет)"
-    prompt = QUERY_PROMPT.format(
-        profile=CANDIDATE_PROFILE,
+    prompt = prompt_tpl.format(
+        profile=profile,
         used_queries=used_str,
         top_titles=titles_str,
     )

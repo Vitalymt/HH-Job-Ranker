@@ -633,6 +633,41 @@
   }
   .save-feedback.show { opacity: 1; }
 
+  .field-textarea {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: monospace;
+    outline: none;
+    resize: vertical;
+    width: 100%;
+    box-sizing: border-box;
+    line-height: 1.5;
+    transition: border-color .15s;
+  }
+  .field-textarea:focus { border-color: var(--accent); }
+
+  .prompt-block { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .prompt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg3);
+    cursor: pointer;
+    user-select: none;
+    gap: 8px;
+  }
+  .prompt-header:hover { background: var(--bg2); }
+  .prompt-title { font-size: 13px; font-weight: 500; flex: 1; }
+  .prompt-toggle { font-size: 11px; color: var(--text3); }
+  .prompt-body { display: none; padding: 12px; background: var(--bg2); }
+  .prompt-body.open { display: block; }
+  .prompt-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+
   /* Responsive */
   @media (max-width: 640px) {
     .header-top { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -814,7 +849,80 @@
 
       <div class="save-row" style="margin-top:20px">
         <button class="btn btn-primary" onclick="saveSettings()">💾 Сохранить настройки</button>
-        <span class="save-feedback" id="saveFeedback">✓ Сохранено! Применится к следующему AI-запросу.</span>
+        <span class="save-feedback" id="saveFeedback">✓ Сохранено!</span>
+      </div>
+    </div>
+
+    <!-- Profile Section -->
+    <div class="settings-card">
+      <h3>Профиль кандидата</h3>
+      <div class="field-row">
+        <label class="field-label">О себе</label>
+        <div class="settings-hint" style="margin-bottom:6px">Опыт, стек, желаемые роли, зарплата. Чем подробнее — тем точнее AI оценивает вакансии.</div>
+        <textarea class="field-textarea" id="profileText" rows="14" placeholder="Ваше имя, опыт, стек, целевые роли, зарплата..."></textarea>
+      </div>
+      <div class="field-row" style="margin-top:12px">
+        <label class="field-label">Начальные поисковые запросы</label>
+        <div class="settings-hint" style="margin-bottom:6px">По одному на строку. Используются при первом запуске; далее AI генерирует сам.</div>
+        <textarea class="field-textarea" id="seedQueriesText" rows="5" placeholder="AI engineer&#10;head of AI&#10;n8n автоматизация"></textarea>
+      </div>
+      <div class="save-row" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="saveProfile()">💾 Сохранить профиль</button>
+        <span class="save-feedback" id="profileFeedback">✓ Профиль сохранён!</span>
+      </div>
+    </div>
+
+    <!-- Prompts Section -->
+    <div class="settings-card">
+      <h3>Промпты AI</h3>
+      <div style="display:flex;flex-direction:column;gap:8px">
+
+        <div class="prompt-block">
+          <div class="prompt-header" onclick="togglePrompt('score')">
+            <span class="prompt-title">Оценка вакансии</span>
+            <span class="prompt-toggle" id="toggleScore">▼ Развернуть</span>
+          </div>
+          <div class="prompt-body" id="bodyScore">
+            <textarea class="field-textarea" id="promptScore" rows="14"></textarea>
+            <div class="prompt-actions">
+              <button class="btn btn-sm" onclick="resetPrompt('score')">🔄 Сбросить к умолчанию</button>
+              <span class="settings-hint">Доступные переменные: {profile} {title} {company} {area} {schedule} {salary} {description}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="prompt-block">
+          <div class="prompt-header" onclick="togglePrompt('cover')">
+            <span class="prompt-title">Сопроводительное письмо</span>
+            <span class="prompt-toggle" id="toggleCover">▼ Развернуть</span>
+          </div>
+          <div class="prompt-body" id="bodyCover">
+            <textarea class="field-textarea" id="promptCover" rows="14"></textarea>
+            <div class="prompt-actions">
+              <button class="btn btn-sm" onclick="resetPrompt('cover')">🔄 Сбросить к умолчанию</button>
+              <span class="settings-hint">Доступные переменные: {profile} {title} {company} {description}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="prompt-block">
+          <div class="prompt-header" onclick="togglePrompt('queries')">
+            <span class="prompt-title">Генерация поисковых запросов</span>
+            <span class="prompt-toggle" id="toggleQueries">▼ Развернуть</span>
+          </div>
+          <div class="prompt-body" id="bodyQueries">
+            <textarea class="field-textarea" id="promptQueries" rows="12"></textarea>
+            <div class="prompt-actions">
+              <button class="btn btn-sm" onclick="resetPrompt('queries')">🔄 Сбросить к умолчанию</button>
+              <span class="settings-hint">Доступные переменные: {profile} {used_queries} {top_titles}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="save-row" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="savePrompts()">💾 Сохранить промпты</button>
+        <span class="save-feedback" id="promptsFeedback">✓ Промпты сохранены!</span>
       </div>
     </div>
 
@@ -1121,6 +1229,88 @@ function closeModalOnOverlay(e) {
   if (e.target === document.getElementById('coverModal')) closeModal();
 }
 
+// ─── Default prompts (for reset button) ──────────────────────
+const DEFAULT_PROMPTS = {
+  score: `
+Ты — AI-рекрутер. Оцени вакансию для кандидата.
+
+ПРОФИЛЬ КАНДИДАТА:
+{profile}
+
+ВАКАНСИЯ:
+Название: {title}
+Компания: {company}
+Локация: {area}
+Формат: {schedule}
+Зарплата: {salary}
+Описание:
+{description}
+
+Верни ТОЛЬКО JSON, без markdown, без пояснений:
+{
+  "score": 85,
+  "grade": "A",
+  "match_reasons": ["причина 1", "причина 2", "причина 3"],
+  "risk_reasons": ["риск 1", "риск 2"],
+  "summary": "Краткий вывод 1-2 предложения"
+}
+
+Шкала оценки:
+A (80-100) — отличное совпадение, рекомендую
+B (60-79)  — хорошее, стоит рассмотреть
+C (40-59)  — частичное совпадение
+D (0-39)   — плохое совпадение, не подходит
+`.trim(),
+
+  cover: `
+Напиши уникальное сопроводительное письмо для отклика на вакансию.
+
+ПРОФИЛЬ КАНДИДАТА:
+{profile}
+
+ВАКАНСИЯ:
+Компания: {company}
+Роль: {title}
+Описание: {description}
+
+ТРЕБОВАНИЯ К ПИСЬМУ:
+- Длина: 150-200 слов
+- Тон: живой, профессиональный, без клише и шаблонов
+- Структура: зацепка (почему эта компания/роль) → что конкретно принесу →
+  пример из опыта с цифрой → призыв к действию
+- НЕ начинать с "Я хочу", "Меня заинтересовала", "Добрый день"
+- НЕ перечислять резюме по пунктам
+- Обязательно упомянуть: название роли и название компании
+- Обращение нейтральное (без имени HR)
+- Язык: русский
+
+Верни только текст письма, без заголовков и пояснений.
+`.trim(),
+
+  queries: `
+Ты ищешь вакансии на HH.ru для конкретного кандидата.
+
+ПРОФИЛЬ КАНДИДАТА:
+{profile}
+
+УЖЕ ИСПОЛЬЗОВАННЫЕ ЗАПРОСЫ (не повторять):
+{used_queries}
+
+ЛУЧШИЕ НАЙДЕННЫЕ ВАКАНСИИ (grade A/B — для понимания что работает):
+{top_titles}
+
+Сгенерируй 6 новых поисковых запросов для HH.ru.
+Правила:
+- Короткие (2-4 слова), как реальный человек ищет работу на HH
+- Разнообразные: часть на русском, часть на английском
+- Учитывай что уже искали — ищи с других углов и синонимов
+- Фокус на целевых ролях кандидата
+
+Верни ТОЛЬКО JSON, без markdown:
+{"queries": ["запрос 1", "запрос 2", "запрос 3", "запрос 4", "запрос 5", "запрос 6"]}
+`.trim(),
+};
+
 // ─── Settings ────────────────────────────────────────────────
 let _currentProvider = 'openrouter';
 
@@ -1129,6 +1319,15 @@ async function loadSettings() {
     const s = await api('/api/settings');
     _currentProvider = s.ai_provider || 'openrouter';
     _applyProvider(_currentProvider);
+
+    // Fill profile
+    if (s.candidate_profile) document.getElementById('profileText').value = s.candidate_profile;
+    if (s.seed_queries) document.getElementById('seedQueriesText').value = s.seed_queries;
+
+    // Fill prompts
+    document.getElementById('promptScore').value = s.prompt_score || DEFAULT_PROMPTS.score;
+    document.getElementById('promptCover').value = s.prompt_cover_letter || DEFAULT_PROMPTS.cover;
+    document.getElementById('promptQueries').value = s.prompt_queries || DEFAULT_PROMPTS.queries;
 
     // Fill OpenRouter fields
     if (s.openrouter_api_key) document.getElementById('orKey').placeholder = s.openrouter_api_key;
@@ -1223,6 +1422,55 @@ async function saveSettings() {
   } catch(e) {
     console.error('saveSettings error:', e);
     alert('Ошибка сохранения: ' + e.message);
+  }
+}
+
+async function saveProfile() {
+  const profile = document.getElementById('profileText').value.trim();
+  const seeds = document.getElementById('seedQueriesText').value.trim();
+  if (!profile) { alert('Профиль не может быть пустым'); return; }
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ candidate_profile: profile, seed_queries: seeds }),
+    });
+    const fb = document.getElementById('profileFeedback');
+    fb.classList.add('show');
+    setTimeout(() => fb.classList.remove('show'), 3000);
+  } catch(e) { alert('Ошибка сохранения профиля: ' + e.message); }
+}
+
+async function savePrompts() {
+  const body = {
+    prompt_score: document.getElementById('promptScore').value,
+    prompt_cover_letter: document.getElementById('promptCover').value,
+    prompt_queries: document.getElementById('promptQueries').value,
+  };
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const fb = document.getElementById('promptsFeedback');
+    fb.classList.add('show');
+    setTimeout(() => fb.classList.remove('show'), 3000);
+  } catch(e) { alert('Ошибка сохранения промптов: ' + e.message); }
+}
+
+function togglePrompt(key) {
+  const body = document.getElementById('body' + key.charAt(0).toUpperCase() + key.slice(1));
+  const toggle = document.getElementById('toggle' + key.charAt(0).toUpperCase() + key.slice(1));
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  toggle.textContent = isOpen ? '▼ Развернуть' : '▲ Свернуть';
+}
+
+function resetPrompt(key) {
+  const map = { score: 'promptScore', cover: 'promptCover', queries: 'promptQueries' };
+  if (confirm('Сбросить промпт к умолчанию?')) {
+    document.getElementById(map[key]).value = DEFAULT_PROMPTS[key];
   }
 }
 
