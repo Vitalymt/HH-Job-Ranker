@@ -68,12 +68,15 @@ async def run_cycle():
 
         # 3. Получить полные описания
         detailed: list[dict] = []
-        for vid, meta in all_new_vacancies.items():
+        total_new = len(all_new_vacancies)
+        for i, (vid, meta) in enumerate(all_new_vacancies.items(), 1):
             detail = await hh_client.get_vacancy_detail(vid)
             if detail:
                 detail["found_by_query"] = meta["_query"]
                 detailed.append(detail)
-                await asyncio.sleep(0.5)
+            if i % 20 == 0 or i == total_new:
+                print(f"[Agent] Загружено описаний: {i}/{total_new}")
+            await asyncio.sleep(0.3)
 
         print(f"[Agent] Получены описания для {len(detailed)} вакансий")
 
