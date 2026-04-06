@@ -20,6 +20,7 @@ set -e
 
 # ── Настройка репозитория ─────────────────────────────────────
 REPO_URL="https://github.com/vitalymt/hh-job-ranker"
+REPO_BRANCH="claude/hh-job-ranker-app-AmK1X"
 INSTALL_DIR="${HOME}/hh-job-ranker"
 # ─────────────────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ if [ ! -f "$(dirname "$0")/main.py" ] && [ ! -f "./main.py" ]; then
         git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || true
     else
         echo -e "${YELLOW}Клонирую в ${INSTALL_DIR}...${NC}"
-        git clone "$REPO_URL" "$INSTALL_DIR"
+        git clone --branch "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
         echo -e "${GREEN}✓ Репозиторий склонирован${NC}"
     fi
 
