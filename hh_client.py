@@ -5,7 +5,9 @@ from typing import List, Tuple, Optional
 import httpx
 
 HH_BASE_URL = "https://api.hh.ru"
-USER_AGENT = os.getenv("HH_USER_AGENT", "HHJobRanker/1.0 (user@example.com)")
+# HTTP headers must be ASCII — replace any non-ASCII chars (e.g. Cyrillic look-alikes in email)
+USER_AGENT = os.getenv("HH_USER_AGENT", "HHJobRanker/1.0 (user@example.com)") \
+    .encode("ascii", errors="replace").decode("ascii")
 
 
 def clean_html(text: str) -> str:
