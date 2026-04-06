@@ -47,14 +47,15 @@ async def search_vacancies(query: str, area_ids: List[int] = None) -> List[dict]
                     params={
                         "text": query,
                         "area": area_id,
-                        "per_page": 20,
+                        "per_page": 50,
                         "order_by": "relevance",
-                        "search_field": "everywhere",
                     },
                     headers=headers,
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                count = len(data.get("items", []))
+                print(f"[HH] query='{query}' area={area_id}: {count} вакансий")
                 for item in data.get("items", []):
                     results[item["id"]] = item
                 await asyncio.sleep(0.5)
@@ -68,14 +69,15 @@ async def search_vacancies(query: str, area_ids: List[int] = None) -> List[dict]
                 params={
                     "text": query,
                     "schedule": "remote",
-                    "per_page": 20,
+                    "per_page": 50,
                     "order_by": "relevance",
-                    "search_field": "everywhere",
                 },
                 headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
+            count = len(data.get("items", []))
+            print(f"[HH] query='{query}' remote: {count} вакансий")
             for item in data.get("items", []):
                 results[item["id"]] = item
             await asyncio.sleep(0.5)
