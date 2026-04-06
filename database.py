@@ -59,6 +59,29 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT
+            )
+        """)
+
+        # Seed defaults from env vars (only if not already set)
+        defaults = {
+            "ai_provider": os.getenv("AI_PROVIDER", "openrouter"),
+            "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
+            "openrouter_model": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat"),
+            "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
+            "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+        }
+        now = datetime.utcnow().isoformat()
+        for key, value in defaults.items():
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+                (key, value, now),
+            )
+
         await db.commit()
 
 
@@ -323,6 +346,31 @@ async def get_last_runs(limit: int = 20) -> List[dict]:
         """, (limit,))
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+async def get_setting(key: str) -> Optional[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_setting(key: str, value: str):
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (key, value, now),
+        )
+        await db.commit()
+
+
+async def get_all_settings() -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT key, value FROM settings")
+        rows = await cursor.fetchall()
+        return {row[0]: row[1] for row in rows}
 
 
 async def get_stats() -> dict:

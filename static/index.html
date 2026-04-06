@@ -527,6 +527,112 @@
   }
   .eff-fill { height: 100%; background: var(--accent); border-radius: 99px; }
 
+  /* Settings */
+  .settings-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .settings-card h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 16px;
+  }
+  .provider-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .provider-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    background: var(--bg3);
+    color: var(--text2);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+    text-align: center;
+  }
+  .provider-btn:hover { border-color: var(--accent); color: var(--text); }
+  .provider-btn.active { border-color: var(--accent); background: var(--accent)22; color: var(--text); }
+  .provider-btn .provider-badge {
+    display: block;
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 2px;
+    font-weight: 400;
+  }
+  .provider-btn.active .provider-badge { color: var(--accent); }
+  .settings-block {
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .settings-block.active { display: flex; }
+  .field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .field-label {
+    font-size: 12px;
+    color: var(--text2);
+    font-weight: 500;
+  }
+  .field-input {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+    font-family: monospace;
+  }
+  .field-input:focus { border-color: var(--accent); }
+  .model-select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color .15s;
+    width: 100%;
+  }
+  .model-select:focus { border-color: var(--accent); }
+  .model-custom { margin-top: 6px; display: none; }
+  .model-custom.show { display: block; }
+  .settings-hint {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 2px;
+  }
+  .save-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .save-feedback {
+    font-size: 12px;
+    color: var(--green);
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .save-feedback.show { opacity: 1; }
+
   /* Responsive */
   @media (max-width: 640px) {
     .header-top { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -561,6 +667,7 @@
 <div class="tabs">
   <div class="tab active" onclick="switchTab('vacancies', this)">📋 Вакансии</div>
   <div class="tab" onclick="switchTab('agent', this)">🤖 Агент</div>
+  <div class="tab" onclick="switchTab('settings', this)">⚙️ Настройки</div>
 </div>
 
 <!-- Vacancies Tab -->
@@ -650,6 +757,70 @@
   </div>
 </div>
 
+  <!-- Settings Tab -->
+  <div class="tab-panel" id="tab-settings">
+
+    <div class="settings-card">
+      <h3>AI Провайдер</h3>
+      <div class="provider-toggle">
+        <button class="provider-btn active" id="btnProviderOR" onclick="switchProvider('openrouter')">
+          OpenRouter
+          <span class="provider-badge">openrouter.ai · много моделей</span>
+        </button>
+        <button class="provider-btn" id="btnProviderDS" onclick="switchProvider('deepseek')">
+          DeepSeek
+          <span class="provider-badge">platform.deepseek.com · нативный API</span>
+        </button>
+      </div>
+
+      <!-- OpenRouter block -->
+      <div class="settings-block active" id="blockOR">
+        <div class="field-row">
+          <label class="field-label">API Key</label>
+          <input class="field-input" type="password" id="orKey" placeholder="sk-or-..." autocomplete="off">
+          <div class="settings-hint">Получить: openrouter.ai/keys</div>
+        </div>
+        <div class="field-row">
+          <label class="field-label">Модель</label>
+          <select class="model-select" id="orModelSelect" onchange="onOrModelChange(this)">
+            <option value="deepseek/deepseek-chat">deepseek/deepseek-chat — дешёво, быстро</option>
+            <option value="anthropic/claude-haiku-4-5">anthropic/claude-haiku-4-5 — качественнее</option>
+            <option value="anthropic/claude-sonnet-4-5">anthropic/claude-sonnet-4-5 — лучшее качество</option>
+            <option value="openai/gpt-4o-mini">openai/gpt-4o-mini — альтернатива</option>
+            <option value="google/gemini-flash-1.5">google/gemini-flash-1.5 — быстро</option>
+            <option value="custom">✏️ Ввести свою модель...</option>
+          </select>
+          <input class="field-input model-custom" type="text" id="orModelCustom" placeholder="provider/model-name">
+        </div>
+      </div>
+
+      <!-- DeepSeek block -->
+      <div class="settings-block" id="blockDS">
+        <div class="field-row">
+          <label class="field-label">API Key</label>
+          <input class="field-input" type="password" id="dsKey" placeholder="sk-..." autocomplete="off">
+          <div class="settings-hint">Получить: platform.deepseek.com</div>
+        </div>
+        <div class="field-row">
+          <label class="field-label">Модель</label>
+          <select class="model-select" id="dsModelSelect" onchange="onDsModelChange(this)">
+            <option value="deepseek-chat">deepseek-chat — стандартная</option>
+            <option value="deepseek-reasoner">deepseek-reasoner — с reasoning, дороже</option>
+            <option value="custom">✏️ Ввести свою модель...</option>
+          </select>
+          <input class="field-input model-custom" type="text" id="dsModelCustom" placeholder="deepseek-chat">
+        </div>
+      </div>
+
+      <div class="save-row" style="margin-top:20px">
+        <button class="btn btn-primary" onclick="saveSettings()">💾 Сохранить настройки</button>
+        <span class="save-feedback" id="saveFeedback">✓ Сохранено! Применится к следующему AI-запросу.</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <!-- Cover Letter Modal -->
 <div class="modal-overlay" id="coverModal" onclick="closeModalOnOverlay(event)">
   <div class="modal">
@@ -695,6 +866,8 @@ function switchTab(name, el) {
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'agent') {
     loadAgentData();
+  } else if (name === 'settings') {
+    loadSettings();
   }
 }
 
@@ -946,6 +1119,111 @@ function closeModal() {
 
 function closeModalOnOverlay(e) {
   if (e.target === document.getElementById('coverModal')) closeModal();
+}
+
+// ─── Settings ────────────────────────────────────────────────
+let _currentProvider = 'openrouter';
+
+async function loadSettings() {
+  try {
+    const s = await api('/api/settings');
+    _currentProvider = s.ai_provider || 'openrouter';
+    _applyProvider(_currentProvider);
+
+    // Fill OpenRouter fields
+    if (s.openrouter_api_key) document.getElementById('orKey').placeholder = s.openrouter_api_key;
+    const orModel = s.openrouter_model || 'deepseek/deepseek-chat';
+    const orSelect = document.getElementById('orModelSelect');
+    let orFound = false;
+    for (const opt of orSelect.options) {
+      if (opt.value === orModel) { opt.selected = true; orFound = true; break; }
+    }
+    if (!orFound) {
+      orSelect.value = 'custom';
+      const customInput = document.getElementById('orModelCustom');
+      customInput.value = orModel;
+      customInput.classList.add('show');
+    }
+
+    // Fill DeepSeek fields
+    if (s.deepseek_api_key) document.getElementById('dsKey').placeholder = s.deepseek_api_key;
+    const dsModel = s.deepseek_model || 'deepseek-chat';
+    const dsSelect = document.getElementById('dsModelSelect');
+    let dsFound = false;
+    for (const opt of dsSelect.options) {
+      if (opt.value === dsModel) { opt.selected = true; dsFound = true; break; }
+    }
+    if (!dsFound) {
+      dsSelect.value = 'custom';
+      const customInput = document.getElementById('dsModelCustom');
+      customInput.value = dsModel;
+      customInput.classList.add('show');
+    }
+  } catch(e) {
+    console.error('loadSettings error:', e);
+  }
+}
+
+function _applyProvider(p) {
+  _currentProvider = p;
+  document.getElementById('btnProviderOR').classList.toggle('active', p === 'openrouter');
+  document.getElementById('btnProviderDS').classList.toggle('active', p === 'deepseek');
+  document.getElementById('blockOR').classList.toggle('active', p === 'openrouter');
+  document.getElementById('blockDS').classList.toggle('active', p === 'deepseek');
+}
+
+function switchProvider(p) {
+  _applyProvider(p);
+}
+
+function onOrModelChange(sel) {
+  document.getElementById('orModelCustom').classList.toggle('show', sel.value === 'custom');
+}
+
+function onDsModelChange(sel) {
+  document.getElementById('dsModelCustom').classList.toggle('show', sel.value === 'custom');
+}
+
+async function saveSettings() {
+  const orKeyVal = document.getElementById('orKey').value.trim();
+  const dsKeyVal = document.getElementById('dsKey').value.trim();
+
+  const orSelectVal = document.getElementById('orModelSelect').value;
+  const orModel = orSelectVal === 'custom'
+    ? (document.getElementById('orModelCustom').value.trim() || 'deepseek/deepseek-chat')
+    : orSelectVal;
+
+  const dsSelectVal = document.getElementById('dsModelSelect').value;
+  const dsModel = dsSelectVal === 'custom'
+    ? (document.getElementById('dsModelCustom').value.trim() || 'deepseek-chat')
+    : dsSelectVal;
+
+  const body = {
+    ai_provider: _currentProvider,
+    openrouter_model: orModel,
+    deepseek_model: dsModel,
+  };
+  if (orKeyVal) body.openrouter_api_key = orKeyVal;
+  if (dsKeyVal) body.deepseek_api_key = dsKeyVal;
+
+  try {
+    await api('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    // Clear key inputs (they were saved)
+    document.getElementById('orKey').value = '';
+    document.getElementById('dsKey').value = '';
+    // Reload to show updated masked values
+    await loadSettings();
+    const fb = document.getElementById('saveFeedback');
+    fb.classList.add('show');
+    setTimeout(() => fb.classList.remove('show'), 3000);
+  } catch(e) {
+    console.error('saveSettings error:', e);
+    alert('Ошибка сохранения: ' + e.message);
+  }
 }
 
 // ─── Agent tab data ───────────────────────────────────────────

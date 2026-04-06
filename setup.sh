@@ -54,6 +54,14 @@ case $MODEL_CHOICE in
     *) OPENROUTER_MODEL="deepseek/deepseek-chat" ;;
 esac
 
+echo ""
+echo -e "${YELLOW}Хотите также настроить DeepSeek нативный API?${NC}"
+echo "  (для переключения между провайдерами прямо в UI)"
+read -p "DeepSeek API Key (Enter = пропустить): " DEEPSEEK_API_KEY
+if [ -n "$DEEPSEEK_API_KEY" ]; then
+    echo -e "${GREEN}✓ DeepSeek API Key получен${NC}"
+fi
+
 read -p "Email для HH User-Agent (любой ваш email): " USER_EMAIL
 if [ -z "$USER_EMAIL" ]; then
     USER_EMAIL="user@example.com"
@@ -71,6 +79,9 @@ INTERVAL=${INTERVAL:-2}
 cat > .env << EOF
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 OPENROUTER_MODEL=${OPENROUTER_MODEL}
+DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+DEEPSEEK_MODEL=deepseek-chat
+AI_PROVIDER=openrouter
 HH_USER_AGENT=HHJobRanker/1.0 (${USER_EMAIL})
 DB_PATH=./data/jobs.db
 PORT=${PORT}

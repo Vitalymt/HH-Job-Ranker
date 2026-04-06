@@ -3,18 +3,11 @@ import os
 from typing import List
 import httpx
 
+import database
 from config.profile import CANDIDATE_PROFILE
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-
-HEADERS = {
-    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-    "HTTP-Referer": "https://hh-job-ranker",
-    "X-Title": "HH Job Ranker",
-    "Content-Type": "application/json",
-}
+DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
 SCORE_PROMPT = """
 Ты — AI-рекрутер. Оцени вакансию для кандидата.
@@ -121,18 +114,36 @@ def _schedule_str(schedule: str) -> str:
     return mapping.get(schedule, schedule or "не указан")
 
 
-async def _call_openrouter(prompt: str, max_tokens: int = 1000) -> str:
+async def _call_ai(prompt: str, max_tokens: int = 1000) -> str:
+    provider = (await database.get_setting("ai_provider")) or "openrouter"
+    if provider == "deepseek":
+        url = DEEPSEEK_URL
+        model = (await database.get_setting("deepseek_model")) or "deepseek-chat"
+        key = (await database.get_setting("deepseek_api_key")) or ""
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+    else:
+        url = OPENROUTER_URL
+        model = (await database.get_setting("openrouter_model")) or "deepseek/deepseek-chat"
+        key = (await database.get_setting("openrouter_api_key")) or ""
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "HTTP-Referer": "https://hh-job-ranker",
+            "X-Title": "HH Job Ranker",
+            "Content-Type": "application/json",
+        }
     payload = {
-        "model": OPENROUTER_MODEL,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0.3,
     }
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(OPENROUTER_URL, headers=HEADERS, json=payload)
+        resp = await client.post(url, headers=headers, json=payload)
         resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"].strip()
+        return resp.json()["choices"][0]["message"]["content"].strip()
 
 
 def _extract_json(text: str) -> dict:
@@ -163,7 +174,7 @@ async def score_vacancy(vacancy: dict) -> dict:
 
     for attempt in range(2):
         try:
-            raw = await _call_openrouter(prompt, max_tokens=600)
+            raw = await _call_ai(prompt, max_tokens=600)
             result = _extract_json(raw)
             score = int(result.get("score", 0))
             grade = result.get("grade", "D").upper()
@@ -206,7 +217,7 @@ async def generate_cover_letter(vacancy: dict) -> str:
         description=vacancy.get("description", "")[:2000],
     )
     try:
-        return await _call_openrouter(prompt, max_tokens=800)
+        return await _call_ai(prompt, max_tokens=800)
     except Exception as e:
         print(f"[AI] Ошибка генерации письма: {e}")
         return "Не удалось сгенерировать письмо. Попробуйте ещё раз."
@@ -221,7 +232,7 @@ async def generate_queries(used_queries: List[str], top_titles: List[str]) -> Li
         top_titles=titles_str,
     )
     try:
-        raw = await _call_openrouter(prompt, max_tokens=300)
+        raw = await _call_ai(prompt, max_tokens=300)
         result = _extract_json(raw)
         queries = result.get("queries", [])
         return [q.strip() for q in queries if q.strip()]

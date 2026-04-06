@@ -85,6 +85,37 @@ async def generate_cover_letter(vacancy_id: str):
     return {"text": text}
 
 
+@app.get("/api/settings")
+async def get_settings():
+    s = await database.get_all_settings()
+    # Mask API keys — show only last 6 chars
+    for k in ("openrouter_api_key", "deepseek_api_key"):
+        val = s.get(k, "")
+        if val and len(val) > 6:
+            s[k] = "***" + val[-6:]
+        elif val:
+            s[k] = "***"
+    return s
+
+
+@app.post("/api/settings")
+async def update_settings(body: dict):
+    allowed = {
+        "ai_provider",
+        "openrouter_api_key",
+        "openrouter_model",
+        "deepseek_api_key",
+        "deepseek_model",
+    }
+    for key, value in body.items():
+        if key in allowed and value is not None:
+            # Skip masked key values — don't overwrite real key with mask
+            if key.endswith("_api_key") and str(value).startswith("***"):
+                continue
+            await database.set_setting(key, str(value))
+    return {"ok": True}
+
+
 class StatusUpdate(BaseModel):
     status: str
 
