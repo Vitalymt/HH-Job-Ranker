@@ -1,4 +1,4 @@
-# HH Job Ranker
+HH Job Ranker
 
 Автономный AI-агент для поиска и оценки вакансий на **HH.ru**.
 
