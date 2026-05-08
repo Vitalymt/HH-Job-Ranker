@@ -8,7 +8,7 @@ import json
 import logging
 import math
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import aiosqlite
@@ -100,7 +100,7 @@ async def init_db() -> None:
             "prompt_cover_letter": DEFAULT_COVER_LETTER_PROMPT,
             "prompt_queries": DEFAULT_QUERY_PROMPT,
         }
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for key, value in defaults.items():
             await db.execute(
                 "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
@@ -174,7 +174,7 @@ def _build_order_clause(sort: str) -> str:
 
 async def save_vacancy(data: dict) -> None:
     """Сохранить вакансию в базу данных (вставка или обновление при конфликте ID)."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             INSERT INTO vacancies (
@@ -233,7 +233,7 @@ async def update_vacancy_score(vacancy_id: str, score: int, grade: str,
                                 match_reasons: list, risk_reasons: list,
                                 summary: str) -> None:
     """Обновить оценку существующей вакансии (при дедупликации с более высоким баллом)."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             UPDATE vacancies SET
@@ -338,7 +338,7 @@ async def update_vacancy_status(vacancy_id: str, status: str) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE vacancies SET status = ?, updated_at = ? WHERE id = ?",
-            (status, datetime.utcnow().isoformat(), vacancy_id),
+            (status, datetime.now(timezone.utc).isoformat(), vacancy_id),
         )
         await db.commit()
 
@@ -348,7 +348,7 @@ async def update_cover_letter(vacancy_id: str, text: str) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE vacancies SET cover_letter = ?, updated_at = ? WHERE id = ?",
-            (text, datetime.utcnow().isoformat(), vacancy_id),
+            (text, datetime.now(timezone.utc).isoformat(), vacancy_id),
         )
         await db.commit()
 
@@ -363,7 +363,7 @@ async def get_used_queries() -> list[str]:
 
 async def save_query(query: str) -> None:
     """Сохранить поисковый запрос (если ещё не существует)."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             INSERT INTO search_queries (query, created_at, last_used_at)
@@ -375,7 +375,7 @@ async def save_query(query: str) -> None:
 
 async def update_query_stats(query: str, found: int, good: int) -> None:
     """Обновить статистику поискового запроса."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             UPDATE search_queries
@@ -437,7 +437,7 @@ async def get_existing_ids() -> set[str]:
 
 async def start_agent_run() -> int:
     """Создать запись о запуске агента и вернуть её ID."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             "INSERT INTO agent_runs (started_at, status) VALUES (?, 'running')",
@@ -449,7 +449,7 @@ async def start_agent_run() -> int:
 
 async def finish_agent_run(run_id: int, stats: dict) -> None:
     """Завершить запись о запуске агента с итоговой статистикой."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             UPDATE agent_runs
@@ -497,7 +497,7 @@ async def get_setting(key: str) -> Optional[str]:
 
 async def set_setting(key: str, value: str) -> None:
     """Установить значение настройки (создать или обновить)."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) "

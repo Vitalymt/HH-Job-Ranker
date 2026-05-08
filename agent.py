@@ -8,7 +8,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -88,7 +88,7 @@ async def run_cycle() -> None:
 
     _is_running = True
     run_id = await database.start_agent_run()
-    logger.info("Запуск цикла #%d в %s", run_id, datetime.utcnow().isoformat())
+    logger.info("Запуск цикла #%d в %s", run_id, datetime.now(timezone.utc).isoformat())
 
     stats = {
         "queries_used": 0,

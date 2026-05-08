@@ -7,7 +7,8 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
+  :root,
+  [data-theme="dark"] {
     --bg: #0f1117;
     --bg2: #1a1d27;
     --bg3: #22263a;
@@ -30,6 +31,33 @@
     --grade-c-bg: #451a0322;
     --grade-d: #475569;
     --grade-d-bg: #1e293b22;
+    --shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+
+  [data-theme="light"] {
+    --bg: #f1f3f5;
+    --bg2: #ffffff;
+    --bg3: #f8f9fa;
+    --border: #dee2e6;
+    --text: #212529;
+    --text2: #495057;
+    --text3: #868e96;
+    --accent: #6366f1;
+    --accent-hover: #4f52d0;
+    --green: #16a34a;
+    --blue: #2563eb;
+    --orange: #d97706;
+    --red: #dc2626;
+    --gray: #adb5bd;
+    --grade-a: #16a34a;
+    --grade-a-bg: #dcfce7;
+    --grade-b: #2563eb;
+    --grade-b-bg: #dbeafe;
+    --grade-c: #d97706;
+    --grade-c-bg: #fef3c7;
+    --grade-d: #6b7280;
+    --grade-d-bg: #f3f4f6;
+    --shadow: 0 1px 3px rgba(0,0,0,.08);
   }
 
   body {
@@ -63,6 +91,18 @@
     letter-spacing: -0.3px;
   }
   .header-title span { color: var(--accent); }
+  .theme-toggle {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    transition: background .15s, border-color .15s;
+    flex-shrink: 0;
+  }
+  .theme-toggle:hover { border-color: var(--accent); }
   .header-status {
     font-size: 12px;
     color: var(--text2);
@@ -200,9 +240,10 @@
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 16px;
-    transition: border-color .15s;
+    transition: border-color .15s, box-shadow .15s;
+    box-shadow: var(--shadow, none);
   }
-  .card:hover { border-color: var(--accent); }
+  .card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(99,102,241,.15); }
 
   .card-header {
     display: flex;
@@ -374,6 +415,7 @@
     flex-direction: column;
     transform: translateY(16px);
     transition: transform .2s;
+    box-shadow: 0 8px 30px rgba(0,0,0,.2);
   }
   .modal-overlay.open .modal { transform: translateY(0); }
   .modal-header {
@@ -534,6 +576,7 @@
     border-radius: 10px;
     padding: 20px;
     margin-bottom: 16px;
+    box-shadow: var(--shadow, none);
   }
   .settings-card h3 {
     font-size: 13px;
@@ -682,7 +725,10 @@
 <div class="header">
   <div class="header-top">
     <div class="header-title">HH Job <span>Ranker</span></div>
-    <button class="btn-run" id="btnRun" onclick="triggerRun()">▶ Запустить сейчас</button>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Переключить тему">🌙</button>
+      <button class="btn-run" id="btnRun" onclick="triggerRun()">▶ Запустить сейчас</button>
+    </div>
   </div>
   <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
     <div class="header-status" id="agentStatus">
@@ -963,11 +1009,31 @@ let vacanciesInterval = null;
 
 // ─── Init ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   loadVacancies();
   loadStats();
   statsInterval = setInterval(loadStats, 30000);
   vacanciesInterval = setInterval(loadVacancies, 300000);
 });
+
+// ─── Theme ────────────────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  applyTheme(saved);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  localStorage.setItem('theme', next);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
 
 // ─── Tab switching ────────────────────────────────────────────
 function switchTab(name, el) {
