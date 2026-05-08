@@ -1,21 +1,50 @@
+"""Клиент для работы с AI-провайдерами (OpenRouter, DeepSeek).
+
+Обеспечивает оценку вакансий, генерацию сопроводительных писем
+и поисковых запросов с обработкой ограничений скорости.
+"""
+
 import json
-import os
-from typing import List
+import logging
+from typing import Optional
+
 import httpx
 
 import database
 from config.defaults import (
     DEFAULT_CANDIDATE_PROFILE,
-    DEFAULT_SCORE_PROMPT,
     DEFAULT_COVER_LETTER_PROMPT,
     DEFAULT_QUERY_PROMPT,
+    DEFAULT_SCORE_PROMPT,
 )
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
+# Модульный экземпляр httpx.AsyncClient для повторного использования
+_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Получить или создать модульный httpx.AsyncClient (ленивая инициализация)."""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=60)
+    return _client
+
+
+async def close_client() -> None:
+    """Закрыть модульный клиент при завершении работы."""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+        _client = None
+
 
 def _salary_str(vacancy: dict) -> str:
+    """Форматировать строку зарплаты из данных вакансии."""
     sal_from = vacancy.get("salary_from")
     sal_to = vacancy.get("salary_to")
     currency = vacancy.get("currency", "RUR")
@@ -30,6 +59,7 @@ def _salary_str(vacancy: dict) -> str:
 
 
 def _schedule_str(schedule: str) -> str:
+    """Преобразовать ID графика работы в человекочитаемое название."""
     mapping = {
         "remote": "Удалённая работа",
         "fullDay": "Полный день (офис)",
@@ -41,6 +71,11 @@ def _schedule_str(schedule: str) -> str:
 
 
 async def _call_ai(prompt: str, max_tokens: int = 1000) -> str:
+    """Вызвать AI-модель с указанным промптом.
+
+    Автоматически определяет провайдера (OpenRouter/DeepSeek) из настроек.
+    Обрабатывает rate-limiting (429) и экспоненциальную задержку при ошибках соединения.
+    """
     provider = (await database.get_setting("ai_provider")) or "openrouter"
     if provider == "deepseek":
         url = DEEPSEEK_URL
@@ -60,24 +95,59 @@ async def _call_ai(prompt: str, max_tokens: int = 1000) -> str:
             "X-Title": "HH Job Ranker",
             "Content-Type": "application/json",
         }
+
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0.3,
     }
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, headers=headers, json=payload)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+
+    client = _get_client()
+
+    # Обработка rate-limiting (429)
+    for rate_attempt in range(2):
+        try:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 429 and rate_attempt == 0:
+                retry_after = int(resp.headers.get("Retry-After", "60"))
+                logger.warning(
+                    "AI API вернул 429. Ожидание %d сек...",
+                    retry_after,
+                )
+                import asyncio
+                await asyncio.sleep(retry_after)
+                continue
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        except httpx.ConnectError as e:
+            # Экспоненциальная задержка при ошибках соединения
+            import asyncio
+            for conn_attempt in range(3):
+                wait = 2 ** conn_attempt
+                logger.warning(
+                    "Ошибка соединения с AI API (попытка %d/3): %s. Повтор через %d сек...",
+                    conn_attempt + 1,
+                    e,
+                    wait,
+                )
+                await asyncio.sleep(wait)
+            raise
+    # Не должно дойти сюда
+    resp = await client.post(url, headers=headers, json=payload)
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
 
 def _extract_json(text: str) -> dict:
-    # Убрать markdown ```json ... ``` если есть
+    """Извлечь JSON из ответа AI-модели.
+
+    Удаляет markdown-обёртку ```json ... ``` если есть.
+    """
     text = text.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[-1] if text.count("```") >= 2 else text
-        # Remove language specifier
+        # Удалить спецификатор языка
         lines = text.split("\n")
         if lines[0].lower() in ("json", ""):
             text = "\n".join(lines[1:])
@@ -86,6 +156,11 @@ def _extract_json(text: str) -> dict:
 
 
 async def score_vacancy(vacancy: dict) -> dict:
+    """Оценить вакансию с помощью AI-модели.
+
+    Возвращает словарь с ключами: score, grade, match_reasons, risk_reasons, summary.
+    При ошибке возвращает оценку D с нулевым баллом.
+    """
     profile = (await database.get_setting("candidate_profile")) or DEFAULT_CANDIDATE_PROFILE
     prompt_tpl = (await database.get_setting("prompt_score")) or DEFAULT_SCORE_PROMPT
     salary = _salary_str(vacancy)
@@ -124,9 +199,9 @@ async def score_vacancy(vacancy: dict) -> dict:
             }
         except Exception as e:
             if attempt == 0:
-                print(f"[AI] Retry score для '{vacancy.get('title')}': {e}")
+                logger.warning("Retry score для '%s': %s", vacancy.get("title"), e)
             else:
-                print(f"[AI] Ошибка score для '{vacancy.get('title')}': {e}")
+                logger.error("Ошибка score для '%s': %s", vacancy.get("title"), e)
 
     return {
         "score": 0,
@@ -138,6 +213,7 @@ async def score_vacancy(vacancy: dict) -> dict:
 
 
 async def generate_cover_letter(vacancy: dict) -> str:
+    """Сгенерировать сопроводительное письмо для вакансии с помощью AI-модели."""
     profile = (await database.get_setting("candidate_profile")) or DEFAULT_CANDIDATE_PROFILE
     prompt_tpl = (await database.get_setting("prompt_cover_letter")) or DEFAULT_COVER_LETTER_PROMPT
     prompt = prompt_tpl.format(
@@ -149,11 +225,16 @@ async def generate_cover_letter(vacancy: dict) -> str:
     try:
         return await _call_ai(prompt, max_tokens=800)
     except Exception as e:
-        print(f"[AI] Ошибка генерации письма: {e}")
+        logger.error("Ошибка генерации письма: %s", e)
         return "Не удалось сгенерировать письмо. Попробуйте ещё раз."
 
 
-async def generate_queries(used_queries: List[str], top_titles: List[str]) -> List[str]:
+async def generate_queries(used_queries: list[str], top_titles: list[str]) -> list[str]:
+    """Сгенерировать новые поисковые запросы с помощью AI-модели.
+
+    Принимает список уже использованных запросов и топ-названий вакансий.
+    Возвращает список новых запросов.
+    """
     profile = (await database.get_setting("candidate_profile")) or DEFAULT_CANDIDATE_PROFILE
     prompt_tpl = (await database.get_setting("prompt_queries")) or DEFAULT_QUERY_PROMPT
     used_str = "\n".join(f"- {q}" for q in used_queries) if used_queries else "— (нет)"
@@ -169,5 +250,5 @@ async def generate_queries(used_queries: List[str], top_titles: List[str]) -> Li
         queries = result.get("queries", [])
         return [q.strip() for q in queries if q.strip()]
     except Exception as e:
-        print(f"[AI] Ошибка генерации запросов: {e}")
+        logger.error("Ошибка генерации запросов: %s", e)
         return []

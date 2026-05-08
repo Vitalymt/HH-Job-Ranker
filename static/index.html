@@ -733,6 +733,8 @@
         <option value="salary">По зарплате</option>
       </select>
       <input class="search-box" type="search" placeholder="🔍 Поиск..." id="searchBox" oninput="applySearch(this.value)">
+      <button class="btn" onclick="exportVacancies('csv')" title="Скачать CSV">📥 CSV</button>
+      <button class="btn" onclick="exportVacancies('json')" title="Скачать JSON">📥 JSON</button>
     </div>
     <div class="vacancies-list" id="vacanciesList">
       <div class="empty-state"><h3>Загрузка...</h3></div>
@@ -953,6 +955,7 @@
 <script>
 // ─── State ───────────────────────────────────────────────────
 let vacancies = [];
+let pagination = { page: 1, pages: 1, total: 0 };
 let filters = { grade: 'all', schedule: 'all', status: 'active', sort: 'score', q: '' };
 let currentModalVacancyId = null;
 let statsInterval = null;
@@ -1039,7 +1042,14 @@ async function loadVacancies() {
     if (filters.schedule !== 'all') params.set('schedule', filters.schedule);
     if (filters.status !== 'all') params.set('status', filters.status);
     params.set('sort', filters.sort);
-    vacancies = await api('/api/vacancies?' + params.toString());
+    if (filters.q) params.set('q', filters.q);
+    params.set('page', pagination.page);
+    params.set('page_size', 20);
+    const data = await api('/api/vacancies?' + params.toString());
+    vacancies = data.items || [];
+    pagination.total = data.total || 0;
+    pagination.pages = data.pages || 1;
+    pagination.page = data.page || 1;
     renderVacancies();
   } catch(e) {
     console.error('Vacancies error:', e);
@@ -1050,25 +1060,40 @@ function renderVacancies() {
   const list = document.getElementById('vacanciesList');
   let items = vacancies;
 
-  const q = filters.q.toLowerCase().trim();
-  if (q) {
-    items = items.filter(v =>
-      (v.title||'').toLowerCase().includes(q) ||
-      (v.company||'').toLowerCase().includes(q) ||
-      (v.summary||'').toLowerCase().includes(q) ||
-      (v.area||'').toLowerCase().includes(q)
-    );
-  }
-
   if (!items.length) {
     list.innerHTML = `<div class="empty-state">
       <h3>Вакансий не найдено</h3>
       <p>Попробуйте изменить фильтры или запустите агент</p>
     </div>`;
+    renderPagination();
     return;
   }
 
   list.innerHTML = items.map(v => cardHTML(v)).join('');
+  renderPagination();
+}
+
+function renderPagination() {
+  let el = document.getElementById('paginationWrap');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'paginationWrap';
+    el.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap;';
+    document.getElementById('vacanciesList').after(el);
+  }
+  if (pagination.pages <= 1) { el.innerHTML = ''; return; }
+
+  const info = `<span style="color:var(--text3);font-size:12px">Стр. ${pagination.page} из ${pagination.pages} · ${pagination.total} вакансий</span>`;
+  let btns = '';
+  if (pagination.page > 1) btns += `<button class="btn" onclick="goPage(${pagination.page-1})">← Назад</button>`;
+  if (pagination.page < pagination.pages) btns += `<button class="btn" onclick="goPage(${pagination.page+1})">Вперёд →</button>`;
+  el.innerHTML = btns + info;
+}
+
+function goPage(p) {
+  pagination.page = p;
+  loadVacancies();
+  window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
 function cardHTML(v) {
@@ -1121,6 +1146,7 @@ function cardHTML(v) {
 // ─── Filters ──────────────────────────────────────────────────
 function setFilter(type, val, btn) {
   filters[type] = val;
+  pagination.page = 1;
   const group = btn.closest('.filter-group');
   group.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
@@ -1129,12 +1155,14 @@ function setFilter(type, val, btn) {
 
 function setSort(val) {
   filters.sort = val;
+  pagination.page = 1;
   loadVacancies();
 }
 
 function applySearch(val) {
   filters.q = val;
-  renderVacancies();
+  pagination.page = 1;
+  loadVacancies();
 }
 
 // ─── Status update ────────────────────────────────────────────
@@ -1531,6 +1559,18 @@ async function loadQueries() {
   } catch(e) {
     console.error('Queries error:', e);
   }
+}
+
+// ─── Export ─────────────────────────────────────────────────
+function exportVacancies(fmt) {
+  const params = new URLSearchParams();
+  if (filters.grade !== 'all') params.set('grade', filters.grade);
+  if (filters.schedule !== 'all') params.set('schedule', filters.schedule);
+  if (filters.status !== 'all') params.set('status', filters.status);
+  params.set('sort', filters.sort);
+  if (filters.q) params.set('q', filters.q);
+  params.set('format', fmt);
+  window.open('/api/vacancies/export?' + params.toString(), '_blank');
 }
 
 // ─── Helpers ──────────────────────────────────────────────────

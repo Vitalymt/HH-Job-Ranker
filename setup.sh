@@ -20,7 +20,7 @@ set -e
 
 # ── Настройка репозитория ─────────────────────────────────────
 REPO_URL="https://github.com/vitalymt/hh-job-ranker"
-REPO_BRANCH="claude/hh-job-ranker-app-AmK1X"
+REPO_BRANCH="main"
 INSTALL_DIR="${HOME}/hh-job-ranker"
 # ─────────────────────────────────────────────────────────────
 

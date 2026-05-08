@@ -1,13 +1,25 @@
-import aiosqlite
+"""Модуль работы с базой данных SQLite.
+
+Обеспечивает CRUD-операции для вакансий, поисковых запросов,
+запусков агента и настроек. Поддерживает пагинацию и экспорт данных.
+"""
+
 import json
+import logging
+import math
 import os
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any
+from datetime import date, datetime
+from typing import Optional
+
+import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.getenv("DB_PATH", "./data/jobs.db")
 
 
-async def init_db():
+async def init_db() -> None:
+    """Инициализировать базу данных: создать таблицы и засеять настройки по умолчанию."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS vacancies (
@@ -67,14 +79,15 @@ async def init_db():
             )
         """)
 
-        # Seed defaults from env vars and built-in defaults (only if not already set)
+        # Засеять настройки по умолчанию из переменных окружения и встроенных значений
         from config.defaults import (
             DEFAULT_CANDIDATE_PROFILE,
-            DEFAULT_SEED_QUERIES,
-            DEFAULT_SCORE_PROMPT,
             DEFAULT_COVER_LETTER_PROMPT,
             DEFAULT_QUERY_PROMPT,
+            DEFAULT_SEED_QUERIES,
+            DEFAULT_SCORE_PROMPT,
         )
+
         defaults = {
             "ai_provider": os.getenv("AI_PROVIDER", "openrouter"),
             "openrouter_api_key": os.getenv("OPENROUTER_API_KEY", ""),
@@ -97,7 +110,70 @@ async def init_db():
         await db.commit()
 
 
-async def save_vacancy(data: dict):
+def _parse_row(row: aiosqlite.Row) -> dict:
+    """Преобразовать строку базы данных в словарь, десериализуя JSON-поля."""
+    item = dict(row)
+    item["match_reasons"] = json.loads(item.get("match_reasons") or "[]")
+    item["risk_reasons"] = json.loads(item.get("risk_reasons") or "[]")
+    return item
+
+
+def _build_filter_conditions(
+    grade: Optional[str],
+    schedule: Optional[str],
+    status: Optional[str],
+    q: Optional[str],
+) -> tuple[list[str], list]:
+    """Построить условия WHERE и параметры для фильтрации вакансий."""
+    conditions: list[str] = []
+    params: list = []
+
+    if grade and grade != "all":
+        conditions.append("grade = ?")
+        params.append(grade.upper())
+    else:
+        # По умолчанию скрываем D
+        if not grade:
+            conditions.append("grade != 'D'")
+
+    if schedule and schedule != "all":
+        schedule_map = {
+            "remote": "remote",
+            "hybrid": "flyInFlyOut",
+            "office": "fullDay",
+        }
+        conditions.append("schedule = ?")
+        params.append(schedule_map.get(schedule, schedule))
+
+    if status and status != "all":
+        if status == "active":
+            conditions.append("status NOT IN ('applied', 'rejected')")
+        else:
+            conditions.append("status = ?")
+            params.append(status)
+    else:
+        conditions.append("status != 'rejected'")
+
+    if q:
+        conditions.append("(title LIKE ? OR company LIKE ? OR summary LIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like, like])
+
+    return conditions, params
+
+
+def _build_order_clause(sort: str) -> str:
+    """Построить выражение ORDER BY из параметра сортировки."""
+    sort_map = {
+        "score": "score DESC, created_at DESC",
+        "date": "created_at DESC",
+        "salary": "COALESCE(salary_from, 0) DESC",
+    }
+    return sort_map.get(sort, "score DESC, created_at DESC")
+
+
+async def save_vacancy(data: dict) -> None:
+    """Сохранить вакансию в базу данных (вставка или обновление при конфликте ID)."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
@@ -139,55 +215,102 @@ async def save_vacancy(data: dict):
         await db.commit()
 
 
+async def get_vacancy_by_title_company(title: str, company: str) -> Optional[dict]:
+    """Найти вакансию по комбинации названия и компании (для дедупликации)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM vacancies WHERE title = ? AND company = ?",
+            (title, company),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return _parse_row(row)
+
+
+async def update_vacancy_score(vacancy_id: str, score: int, grade: str,
+                                match_reasons: list, risk_reasons: list,
+                                summary: str) -> None:
+    """Обновить оценку существующей вакансии (при дедупликации с более высоким баллом)."""
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE vacancies SET
+                score = ?, grade = ?,
+                match_reasons = ?, risk_reasons = ?,
+                summary = ?, updated_at = ?
+            WHERE id = ?
+        """, (
+            score,
+            grade,
+            json.dumps(match_reasons, ensure_ascii=False),
+            json.dumps(risk_reasons, ensure_ascii=False),
+            summary,
+            now,
+            vacancy_id,
+        ))
+        await db.commit()
+
+
 async def get_vacancies(
     grade: Optional[str] = None,
     schedule: Optional[str] = None,
     status: Optional[str] = None,
     sort: str = "score",
     q: Optional[str] = None,
-) -> List[dict]:
-    conditions = []
-    params = []
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """Получить список вакансий с фильтрацией, сортировкой и пагинацией.
 
-    if grade and grade != "all":
-        conditions.append("grade = ?")
-        params.append(grade.upper())
-    else:
-        # По умолчанию скрываем D
-        if not grade:
-            conditions.append("grade != 'D'")
-
-    if schedule and schedule != "all":
-        schedule_map = {
-            "remote": "remote",
-            "hybrid": "flyInFlyOut",
-            "office": "fullDay",
-        }
-        conditions.append("schedule = ?")
-        params.append(schedule_map.get(schedule, schedule))
-
-    if status and status != "all":
-        if status == "active":
-            conditions.append("status NOT IN ('applied', 'rejected')")
-        else:
-            conditions.append("status = ?")
-            params.append(status)
-    else:
-        conditions.append("status != 'rejected'")
-
-    if q:
-        conditions.append("(title LIKE ? OR company LIKE ? OR summary LIKE ?)")
-        like = f"%{q}%"
-        params.extend([like, like, like])
-
+    Возвращает словарь: {"items": [...], "total": N, "page": N, "pages": N}.
+    """
+    conditions, params = _build_filter_conditions(grade, schedule, status, q)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order = _build_order_clause(sort)
 
-    sort_map = {
-        "score": "score DESC, created_at DESC",
-        "date": "created_at DESC",
-        "salary": "COALESCE(salary_from, 0) DESC",
-    }
-    order = sort_map.get(sort, "score DESC, created_at DESC")
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Подсчитать общее количество
+        count_cursor = await db.execute(
+            f"SELECT COUNT(*) FROM vacancies {where}",
+            params,
+        )
+        total = (await count_cursor.fetchone())[0]
+        pages = max(1, math.ceil(total / page_size))
+
+        # Ограничить страницу допустимыми значениями
+        page = max(1, min(page, pages))
+
+        offset = (page - 1) * page_size
+        cursor = await db.execute(
+            f"SELECT * FROM vacancies {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            params + [page_size, offset],
+        )
+        rows = await cursor.fetchall()
+        items = [_parse_row(row) for row in rows]
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "pages": pages,
+        }
+
+
+async def get_vacancies_export(
+    grade: Optional[str] = None,
+    schedule: Optional[str] = None,
+    status: Optional[str] = None,
+    sort: str = "score",
+    q: Optional[str] = None,
+) -> list[dict]:
+    """Получить все вакансии по фильтрам без пагинации (для экспорта CSV/JSON)."""
+    conditions, params = _build_filter_conditions(grade, schedule, status, q)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order = _build_order_clause(sort)
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -196,29 +319,22 @@ async def get_vacancies(
             params,
         )
         rows = await cursor.fetchall()
-        result = []
-        for row in rows:
-            item = dict(row)
-            item["match_reasons"] = json.loads(item.get("match_reasons") or "[]")
-            item["risk_reasons"] = json.loads(item.get("risk_reasons") or "[]")
-            result.append(item)
-        return result
+        return [_parse_row(row) for row in rows]
 
 
 async def get_vacancy(vacancy_id: str) -> Optional[dict]:
+    """Получить одну вакансию по её ID."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,))
         row = await cursor.fetchone()
         if not row:
             return None
-        item = dict(row)
-        item["match_reasons"] = json.loads(item.get("match_reasons") or "[]")
-        item["risk_reasons"] = json.loads(item.get("risk_reasons") or "[]")
-        return item
+        return _parse_row(row)
 
 
-async def update_vacancy_status(vacancy_id: str, status: str):
+async def update_vacancy_status(vacancy_id: str, status: str) -> None:
+    """Обновить статус вакансии."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE vacancies SET status = ?, updated_at = ? WHERE id = ?",
@@ -227,7 +343,8 @@ async def update_vacancy_status(vacancy_id: str, status: str):
         await db.commit()
 
 
-async def update_cover_letter(vacancy_id: str, text: str):
+async def update_cover_letter(vacancy_id: str, text: str) -> None:
+    """Сохранить сопроводительное письмо для вакансии."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE vacancies SET cover_letter = ?, updated_at = ? WHERE id = ?",
@@ -236,14 +353,16 @@ async def update_cover_letter(vacancy_id: str, text: str):
         await db.commit()
 
 
-async def get_used_queries() -> List[str]:
+async def get_used_queries() -> list[str]:
+    """Получить список уже использованных поисковых запросов."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("SELECT query FROM search_queries ORDER BY last_used_at DESC")
         rows = await cursor.fetchall()
         return [row[0] for row in rows]
 
 
-async def save_query(query: str):
+async def save_query(query: str) -> None:
+    """Сохранить поисковый запрос (если ещё не существует)."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
@@ -254,7 +373,8 @@ async def save_query(query: str):
         await db.commit()
 
 
-async def update_query_stats(query: str, found: int, good: int):
+async def update_query_stats(query: str, found: int, good: int) -> None:
+    """Обновить статистику поискового запроса."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
@@ -267,7 +387,8 @@ async def update_query_stats(query: str, found: int, good: int):
         await db.commit()
 
 
-async def get_top_queries(limit: int = 10) -> List[dict]:
+async def get_top_queries(limit: int = 10) -> list[dict]:
+    """Получить топ поисковых запросов по количеству хороших результатов."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("""
@@ -280,7 +401,8 @@ async def get_top_queries(limit: int = 10) -> List[dict]:
         return [dict(row) for row in rows]
 
 
-async def get_all_queries() -> List[dict]:
+async def get_all_queries() -> list[dict]:
+    """Получить все поисковые запросы."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("""
@@ -292,7 +414,8 @@ async def get_all_queries() -> List[dict]:
         return [dict(row) for row in rows]
 
 
-async def get_top_vacancies_titles(limit: int = 10) -> List[str]:
+async def get_top_vacancies_titles(limit: int = 10) -> list[str]:
+    """Получить топ-названий вакансий с высокими оценками (A, B)."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("""
             SELECT title FROM vacancies
@@ -304,7 +427,8 @@ async def get_top_vacancies_titles(limit: int = 10) -> List[str]:
         return [row[0] for row in rows]
 
 
-async def get_existing_ids() -> set:
+async def get_existing_ids() -> set[str]:
+    """Получить множество всех ID вакансий в базе."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("SELECT id FROM vacancies")
         rows = await cursor.fetchall()
@@ -312,6 +436,7 @@ async def get_existing_ids() -> set:
 
 
 async def start_agent_run() -> int:
+    """Создать запись о запуске агента и вернуть её ID."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
@@ -322,7 +447,8 @@ async def start_agent_run() -> int:
         return cursor.lastrowid
 
 
-async def finish_agent_run(run_id: int, stats: dict):
+async def finish_agent_run(run_id: int, stats: dict) -> None:
+    """Завершить запись о запуске агента с итоговой статистикой."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
@@ -348,7 +474,8 @@ async def finish_agent_run(run_id: int, stats: dict):
         await db.commit()
 
 
-async def get_last_runs(limit: int = 20) -> List[dict]:
+async def get_last_runs(limit: int = 20) -> list[dict]:
+    """Получить последние запуски агента."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("""
@@ -361,13 +488,15 @@ async def get_last_runs(limit: int = 20) -> List[dict]:
 
 
 async def get_setting(key: str) -> Optional[str]:
+    """Получить значение настройки по ключу."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("SELECT value FROM settings WHERE key = ?", (key,))
         row = await cursor.fetchone()
         return row[0] if row else None
 
 
-async def set_setting(key: str, value: str):
+async def set_setting(key: str, value: str) -> None:
+    """Установить значение настройки (создать или обновить)."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -378,7 +507,8 @@ async def set_setting(key: str, value: str):
         await db.commit()
 
 
-async def get_all_settings() -> dict:
+async def get_all_settings() -> dict[str, str]:
+    """Получить все настройки в виде словаря."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("SELECT key, value FROM settings")
         rows = await cursor.fetchall()
@@ -386,6 +516,7 @@ async def get_all_settings() -> dict:
 
 
 async def get_stats() -> dict:
+    """Получить общую статистику: количество вакансий, сегодняшние добавления и статус агента."""
     today = date.today().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM vacancies")
